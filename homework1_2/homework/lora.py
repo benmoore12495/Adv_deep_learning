@@ -31,26 +31,16 @@ class LoRALinear(HalfLinear):
         # Keep the LoRA layers in float32
         # raise NotImplementedError()
 
-        # self.lora_a = HalfLinear(in_features, lora_dim, bias=False)
-        # self.lora_b = HalfLinear(lora_dim, out_features, bias=False)
-
-        # # Initialize LoRA layers
-        # torch.nn.init.kaiming_uniform_(self.lora_a.weight)
-        # torch.nn.init.zeros_(self.lora_b.weight)
-
         self.lora_a = torch.nn.Linear(in_features, lora_dim, bias=False, dtype=torch.float32)
         self.lora_b = torch.nn.Linear(lora_dim, out_features, bias=False, dtype=torch.float32)
-
-        # Initialize LoRA layers
+        
         torch.nn.init.kaiming_uniform_(self.lora_a.weight, a=math.sqrt(5))
         torch.nn.init.zeros_(self.lora_b.weight)
 
-        # Ensure the main weights are frozen
         self.weight.requires_grad = False
         if self.bias is not None:
             self.bias.requires_grad = False
 
-        # Ensure LoRA layers remain trainable
         self.lora_a.weight.requires_grad = True
         self.lora_b.weight.requires_grad = True
 
@@ -59,10 +49,8 @@ class LoRALinear(HalfLinear):
         # raise NotImplementedError()
         base_output = super().forward(x.to(dtype=torch.float16))
 
-        # Compute LoRA adapter output in float32
         lora_output = self.lora_b(self.lora_a(x.to(dtype=torch.float32)))
 
-        # Combine outputs and return in original input dtype
         return base_output.to(dtype=x.dtype) + lora_output.to(dtype=x.dtype)
 
 
