@@ -22,15 +22,12 @@ class QLoRALinear(Linear4Bit):
         # TODO: Implement LoRA, initialize the layers, and make sure they are trainable
         # Keep the LoRA layers in float32
         # raise NotImplementedError()
-        # Initialize LoRA layers
         self.lora_a = torch.nn.Linear(in_features, lora_dim, bias=False, dtype=torch.float32)
         self.lora_b = torch.nn.Linear(lora_dim, out_features, bias=False, dtype=torch.float32)
-
-        # Initialize LoRA weights
+        
         torch.nn.init.kaiming_uniform_(self.lora_a.weight, a=math.sqrt(5))
         torch.nn.init.zeros_(self.lora_b.weight)
 
-        # Ensure LoRA layers are trainable
         self.lora_a.weight.requires_grad = True
         self.lora_b.weight.requires_grad = True
 
@@ -38,11 +35,8 @@ class QLoRALinear(Linear4Bit):
         # TODO: Forward. Make sure to cast inputs to self.linear_dtype and the output back to x.dtype
         # raise NotImplementedError()
         base_output = super().forward(x)
-
-        # LoRA adapter output
         lora_output = self.lora_b(self.lora_a(x.to(dtype=torch.float32)))
 
-        # Combine base and LoRA outputs
         return base_output + lora_output.to(dtype=base_output.dtype)
 
 
