@@ -48,9 +48,7 @@ class BSQ(torch.nn.Module):
         super().__init__()
         # raise NotImplementedError()
         self._codebook_bits = codebook_bits
-        # Linear down-projection: embedding_dim -> codebook_bits
         self.linear_down = torch.nn.Linear(embedding_dim, codebook_bits)
-        # Linear up-projection: codebook_bits -> embedding_dim
         self.linear_up = torch.nn.Linear(codebook_bits, embedding_dim)
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
@@ -109,7 +107,6 @@ class BSQPatchAutoEncoder(PatchAutoEncoder, Tokenizer):
         super().__init__(patch_size=patch_size, latent_dim=latent_dim)
         # raise NotImplementedError()
         self.codebook_bits = codebook_bits
-        # Create the BSQ quantizer that maps between latent_dim and codebook_bits dimensions.
         self.bsq = BSQ(codebook_bits, latent_dim)
 
     def encode_index(self, x: torch.Tensor) -> torch.Tensor:
@@ -156,7 +153,6 @@ class BSQPatchAutoEncoder(PatchAutoEncoder, Tokenizer):
         reconstructed_features = self.bsq.decode(quantized)
         decoded = self.decoder(reconstructed_features)
         
-        # Monitor codebook usage (e.g., percentage of unused codes)
         tokens = self.bsq._code_to_index(quantized)
         cnt = torch.bincount(tokens.flatten(), minlength=2 ** self.codebook_bits)
         metrics = {"cb_usage": (cnt == 0).float().mean().detach()}
