@@ -41,7 +41,8 @@ class Autoregressive(abc.ABC):
         """
 
 
-class AutoregressiveModel(torch.nn.Module):
+# class AutoregressiveModel(torch.nn.Module):
+class AutoregressiveModel(torch.nn.Module, Autoregressive):
     """
     Implement an auto-regressive model.
     The input is a set of patch tokens (integers), the output is an image of probability.
@@ -66,6 +67,17 @@ class AutoregressiveModel(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         # raise NotImplementedError()
 
+        if x.dim() == 4:
+            if x.size(-1) == 1:
+                x = x.squeeze(-1)
+            else:
+                x_bin = (x >= 0).int()
+                bit_weights = 2 ** torch.arange(x.size(-1), device=x.device)
+                x = (x_bin * bit_weights).sum(dim=-1)
+
+        if x.dim() != 3:
+            raise ValueError(f"Expected input shape (B, h, w) after processing, got {x.shape}")
+
         B, h, w = x.shape
         L = h * w  
 
@@ -76,7 +88,7 @@ class AutoregressiveModel(torch.nn.Module):
         emb_shifted = emb_shifted.transpose(0, 1)
         causal_mask = torch.nn.Transformer.generate_square_subsequent_mask(L).to(emb_shifted.device)
 
-        transformer_out = self.transformer(emb_shifted, mask=causal_mask)
+        transformer_out = self.transformer(emb_shifted, src_mask=causal_mask)
         transformer_out = transformer_out.transpose(0, 1)  
 
         logits = self.proj(transformer_out)
@@ -89,20 +101,24 @@ class AutoregressiveModel(torch.nn.Module):
         device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         L = h * w  
         generated = torch.zeros(B, L, dtype=torch.long, device=device)
-
-        for t in range(L):
-            cur_tokens = generated[:, :t+1]
-            emb = self.token_embedding(cur_tokens)
+        
+        generated[:, 0] = torch.randint(low=0, high=self.n_tokens, size=(B,), device=device)
+        
+        for t in range(1, L):
+            cur_tokens = generated[:, :t]  
+            emb = self.token_embedding(cur_tokens)  
             start_token = torch.zeros(B, 1, self.d_latent, device=device, dtype=emb.dtype)
-            emb_shifted = torch.cat([start_token, emb[:, :-1, :]], dim=1)
+            emb_shifted = torch.cat([start_token, emb[:, :-1, :]], dim=1)  
             emb_shifted = emb_shifted.transpose(0, 1)
             cur_len = emb_shifted.size(0)
             causal_mask = torch.nn.Transformer.generate_square_subsequent_mask(cur_len).to(device)
-            transformer_out = self.transformer(emb_shifted, mask=causal_mask)
+            transformer_out = self.transformer(emb_shifted, src_mask=causal_mask)
             transformer_out = transformer_out.transpose(0, 1)  
             logits = self.proj(transformer_out[:, -1, :])  
-            next_token = logits.argmax(dim=-1)
+            
+            probs = torch.softmax(logits, dim=-1)
+            next_token = torch.multinomial(probs, num_samples=1).squeeze(-1)  
+            
             generated[:, t] = next_token
 
-        generated = generated.view(B, h, w)
-        return generated
+        return generated.view(B, h, w)
