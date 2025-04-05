@@ -94,17 +94,67 @@ class BaseLLM:
         # Preventing OOM
         # Depending on your GPU batched generation will use a lot of memory.
         # If you run out of memory, try to reduce the micro_batch_size.
+
+        # -- Previous code -- 
+
+        # micro_batch_size = 32
+        # if len(prompts) > micro_batch_size:
+        #     return [
+        #         r
+        #         for idx in tqdm(
+        #             range(0, len(prompts), micro_batch_size), desc=f"LLM Running on Micro Batches {micro_batch_size}"
+        #         )
+        #         for r in self.batched_generate(prompts[idx : idx + micro_batch_size], num_return_sequences, temperature)
+        #     ]
+
+        # raise NotImplementedError()
+
+        # -- Updated code -- 
         micro_batch_size = 32
         if len(prompts) > micro_batch_size:
-            return [
-                r
-                for idx in tqdm(
-                    range(0, len(prompts), micro_batch_size), desc=f"LLM Running on Micro Batches {micro_batch_size}"
-                )
-                for r in self.batched_generate(prompts[idx : idx + micro_batch_size], num_return_sequences, temperature)
-            ]
+            results = []
+            for idx in tqdm(range(0, len(prompts), micro_batch_size),
+                            desc=f"LLM Running on Micro Batches {micro_batch_size}"):
+                batch = prompts[idx: idx + micro_batch_size]
+                results.extend(self.batched_generate(batch, num_return_sequences, temperature))
+            return results
 
-        raise NotImplementedError()
+        # Ensure left-padding
+        self.tokenizer.padding_side = "left"
+
+        # Tokenize and move tensors to device
+        inputs = self.tokenizer(prompts, padding=True, return_tensors="pt")
+        inputs = {key: tensor.to(self.device) for key, tensor in inputs.items()}
+
+        # Determine number of sequences to generate per prompt
+        n_return = num_return_sequences if num_return_sequences is not None else 1
+
+        # Setup generation parameters
+        do_sample = temperature > 0
+
+        outputs = self.model.generate(
+            **inputs,
+            max_new_tokens=50,
+            do_sample=do_sample,
+            temperature=temperature,
+            num_return_sequences=n_return,
+            eos_token_id=self.tokenizer.eos_token_id,
+        )
+
+        # Only decode the new tokens after the original prompt.
+        input_length = inputs["input_ids"].shape[1]
+        generated_tokens = outputs[:, input_length:]
+        decoded = self.tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)
+
+        # If only one sequence per prompt, return a flat list of strings.
+        if num_return_sequences is None:
+            return decoded
+        else:
+            # Otherwise, group the outputs into a list for each prompt.
+            num_prompts = len(prompts)
+            return [decoded[i * n_return:(i + 1) * n_return] for i in range(num_prompts)]
+
+
 
     def answer(self, *questions) -> list[float]:
         """
@@ -113,6 +163,14 @@ class BaseLLM:
         # Convert each question
         prompts = [self.format_prompt(q) for q in questions]
         generations = self.batched_generate(prompts)
+
+        for q, raw in zip(questions, generations):
+            print("----- Raw Output -----")
+            print("Question:", q)
+            print("Raw Generation:", raw)
+            print("parsed answer:", self.parse_answer(raw))
+            print("----------------------")
+
         return [self.parse_answer(g) for g in generations]
 
 
