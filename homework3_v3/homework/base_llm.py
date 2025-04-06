@@ -21,15 +21,42 @@ class BaseLLM:
         """
         return question
 
+    # def parse_answer(self, answer: str) -> float:
+    #     """
+    #     Parse the <answer></answer> tag and return a float.
+    #     This function is somewhat robust to output errors (e.g. missing </answer> tags).
+    #     """
+    #     try:
+    #         return float(answer.split("<answer>")[1].split("</answer>")[0])
+    #     except (IndexError, ValueError):
+    #         return float("nan")
+
+
+    # Updated def parse (using chatgpt to support)
     def parse_answer(self, answer: str) -> float:
         """
-        Parse the <answer></answer> tag and return a float.
-        This function is somewhat robust to output errors (e.g. missing </answer> tags).
+        Parse the output from the LLM and return a float.
+        This version first tries to extract the number from within <answer></answer> tags.
+        If not found, it attempts to extract the final number in the output text.
         """
         try:
-            return float(answer.split("<answer>")[1].split("</answer>")[0])
+            # Try to extract using the <answer> tags
+            if "<answer>" in answer and "</answer>" in answer:
+                num_str = answer.split("<answer>")[1].split("</answer>")[0]
+                return float(num_str.replace(",", "").strip())
         except (IndexError, ValueError):
-            return float("nan")
+            pass
+
+        # If the above fails, try to extract the last number in the output using regex.
+        # This regex finds the last occurrence of a number (integer or decimal) in the string.
+        number_matches = re.findall(r'(-?\d+(?:\.\d+)?)', answer.replace(",", ""))
+        if number_matches:
+            try:
+                return float(number_matches[-1].strip())
+            except ValueError:
+                return float("nan")
+        
+        return float("nan")
 
     def generate(self, prompt: str) -> str:
         """
