@@ -2,7 +2,7 @@ from typing import overload
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
-import re 
+import re
 
 checkpoint = "HuggingFaceTB/SmolLM2-360M-Instruct"
 
@@ -192,12 +192,12 @@ class BaseLLM:
         prompts = [self.format_prompt(q) for q in questions]
         generations = self.batched_generate(prompts)
 
-        for q, raw in zip(questions, generations):
-            print("----- Raw Output -----")
-            print("Question:", q)
-            print("Raw Generation:", raw)
-            print("parsed answer:", self.parse_answer(raw))
-            print("----------------------")
+        # for q, raw in zip(questions, generations):
+        #     print("----- Raw Output -----")
+        #     print("Question:", q)
+        #     print("Raw Generation:", raw)
+        #     print("parsed answer:", self.parse_answer(raw))
+        #     print("----------------------")
 
         return [self.parse_answer(g) for g in generations]
 
