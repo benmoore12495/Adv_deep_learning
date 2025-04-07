@@ -1,20 +1,9 @@
 from .base_llm import BaseLLM
 from .data import Dataset, benchmark
 
-# def load() -> BaseLLM:
-#     from pathlib import Path
-#     from peft import PeftModel
+from pathlib import Path
+default_output_dir = Path(__file__).parent / "sft_model"
 
-#     model_name = "sft_model"
-#     model_path = Path(__file__).parent / model_name
-
-#     llm = BaseLLM()
-#     # llm.model = PeftModel.from_pretrained(model_path, model=llm.model, is_trainable=False).to(llm.device)
-#     llm.model = PeftModel.from_pretrained(model=llm.model, model_id=model_path, is_trainable=False).to(llm.device)
-
-#     llm.model.eval()
-
-#     return llm
 
 def load() -> BaseLLM:
     from pathlib import Path
@@ -28,27 +17,21 @@ def load() -> BaseLLM:
     llm.model.eval()
     return llm
 
-
-
 def tokenize(tokenizer, question: str, answer: str):
-    """
-    Tokenize a data element.
-    We first append the <EOS> token to the question / answer pair.
-    Then we tokenize and construct the ground truth `labels`.
-    `labels[i] == -100` for the question or masked out parts, since we only want to supervise
-    the answer.
-    """
     full_text = f"{question} {answer}{tokenizer.eos_token}"
-
     tokenizer.padding_side = "right"
     tokenizer.pad_token = tokenizer.eos_token
+
     full = tokenizer(full_text, padding="max_length", truncation=True, max_length=128)
-
     input_ids = full["input_ids"]
-    question_len = len(tokenizer(question)["input_ids"])
 
-    # Create labels: mask out the prompt part
-    labels = [-100] * question_len + input_ids[question_len:]
+    # Find the start of <answer> tag in the *text*, then count tokens up to that
+    answer_start = full_text.find("<answer>")
+    if answer_start == -1:
+        raise ValueError("No <answer> tag found!")
+
+    answer_token_start = len(tokenizer(full_text[:answer_start])["input_ids"])
+    labels = [-100] * answer_token_start + input_ids[answer_token_start:]
 
     for i in range(len(labels)):
         if full["attention_mask"][i] == 0:
@@ -59,12 +42,13 @@ def tokenize(tokenizer, question: str, answer: str):
 
 
 def format_example(prompt: str, answer: str) -> dict[str, str]:
-    """
-    Construct a question / answer pair. Consider rounding the answer to make it easier for the LLM.
-    """
-    # raise NotImplementedError()
-    formatted_answer = f"<answer>{round(float(answer), 2)}</answer>"
-    return {"question": prompt, "answer": formatted_answer}
+    return {
+        # "question": prompt.strip(),  # No Q: or A:
+        "question": prompt,  # No Q: or A:
+        "answer": f"<answer>{round(float(answer), 2)}</answer>"
+    }
+
+
 
 
 class TokenizedDataset:
@@ -84,13 +68,25 @@ class TokenizedDataset:
     def __len__(self):
         return len(self.data)
 
+    # def __getitem__(self, idx):
+    #     formated_data = self.format_fn(*self.data[idx])
+    #     return tokenize(self.tokenizer, **formated_data)
     def __getitem__(self, idx):
         formated_data = self.format_fn(*self.data[idx])
-        return tokenize(self.tokenizer, **formated_data)
+        tokenized = tokenize(self.tokenizer, **formated_data)
+
+        if idx == 0:
+            print("\n--- Tokenization Debug ---")
+            print("Original question:", formated_data["question"])
+            print("Input IDs:", tokenized["input_ids"])
+            print("Tokens:", self.tokenizer.convert_ids_to_tokens(tokenized["input_ids"]))
+            print("Labels:", tokenized["labels"])
+
+        return tokenized
 
 
 def train_model(
-    output_dir: str,
+    output_dir: str = str(default_output_dir),
     **kwargs,
 ):
     # raise NotImplementedError()
@@ -151,24 +147,9 @@ def train_model(
     # trainer.save_model(Path(__file__).parent / "sft_model")
     trainer.save_model(output_dir)
 
-
     # 9. Optional test
     test_model(output_dir)
 
-
-# def test_model(ckpt_path: str):
-#     from pathlib import Path
-#     from peft import PeftModel
-
-#     testset = Dataset("valid")
-#     llm = BaseLLM()
-
-#     adapter_path = Path(ckpt_path)
-#     # llm.model = PeftModel.from_pretrained(adapter_path, model=llm.model, is_trainable=False).to(llm.device)
-#     llm.model = PeftModel.from_pretrained(model=llm.model, model_id=adapter_path, is_trainable=False).to(llm.device)
-
-#     benchmark_result = benchmark(llm, testset, 100)
-#     print(f"{benchmark_result.accuracy=}  {benchmark_result.answer_rate=}")
 
 def test_model(ckpt_path: str):
     from pathlib import Path
@@ -182,6 +163,20 @@ def test_model(ckpt_path: str):
 
     benchmark_result = benchmark(llm, testset, 100)
     print(f"{benchmark_result.accuracy=}  {benchmark_result.answer_rate=}")
+
+    print("\n--- Sample Generations ---")
+    for i in range(5):
+        question, true_answer = testset[i]
+        # raw_output = llm.generate(question)
+        formatted_prompt = f"Q: {question}\nA: <answer>"
+        print("\n[DEBUG] Prompt given to LLM:\n", formatted_prompt)
+        raw_output = llm.generate(formatted_prompt)
+        parsed = llm.parse_answer(raw_output)
+
+        print(f"\nQ{i+1}: {question}")
+        print("Raw Generation:", repr(raw_output))
+        print("Parsed Answer:", parsed)
+        print("Expected:", true_answer)
 
 
 
