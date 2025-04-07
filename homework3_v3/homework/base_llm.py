@@ -16,21 +16,14 @@ class BaseLLM:
         self.device = device
 
     def format_prompt(self, question: str) -> str:
-        """
-        Take a question and convert it into an input to SmolLM2. The LLM will likely answer much
-        better if you provide a chat template. self.tokenizer.apply_chat_template can help here
-        """
-        return question
-
-    # def parse_answer(self, answer: str) -> float:
-    #     """
-    #     Parse the <answer></answer> tag and return a float.
-    #     This function is somewhat robust to output errors (e.g. missing </answer> tags).
-    #     """
-    #     try:
-    #         return float(answer.split("<answer>")[1].split("</answer>")[0])
-    #     except (IndexError, ValueError):
-    #         return float("nan")
+        return self.tokenizer.apply_chat_template(
+            [
+                {"role": "system", "content": "You are an accurate mathematical converter AI who thinks but is consise"},
+                {"role": "user", "content": question},
+            ],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
 
 
     # Updated def parse (using chatgpt to support)
@@ -70,7 +63,14 @@ class BaseLLM:
         - decode the outputs with self.tokenizer.decode
 
         """
-        return self.batched_generate([prompt])[0]
+        # return self.batched_generate([prompt])[0]
+
+        # def generate(self, prompt: str) -> str:
+        # print('*********')
+        # print(f"\n[generate()] Prompt: {repr(prompt)}")
+        result = self.batched_generate([prompt])[0]
+        # print(f"[generate()] Output: {repr(result)}")
+        return result
 
     @overload
     def batched_generate(
@@ -167,12 +167,25 @@ class BaseLLM:
             temperature=temperature,
             num_return_sequences=n_return,
             eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=self.tokenizer.pad_token_id,  # <-- add this!
         )
+
+        # print("\n[DEBUG] Generated token IDs:")
+        # print(outputs)
 
         # Only decode the new tokens after the original prompt.
         input_length = inputs["input_ids"].shape[1]
         generated_tokens = outputs[:, input_length:]
         decoded = self.tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)
+
+        # print("\n[DEBUG] Generated raw token IDs:")
+        # print(generated_tokens)
+
+        # print("\n[DEBUG] Decoded with special tokens:")
+        # print(self.tokenizer.batch_decode(generated_tokens, skip_special_tokens=False))
+
+        # print("\n[DEBUG] Decoded without special tokens:")
+        # print(self.tokenizer.batch_decode(generated_tokens, skip_special_tokens=True))
 
         # If only one sequence per prompt, return a flat list of strings.
         if num_return_sequences is None:
@@ -192,12 +205,12 @@ class BaseLLM:
         prompts = [self.format_prompt(q) for q in questions]
         generations = self.batched_generate(prompts)
 
-        for q, raw in zip(questions, generations):
-            print("----- Raw Output -----")
-            print("Question:", q)
-            print("Raw Generation:", raw)
-            print("parsed answer:", self.parse_answer(raw))
-            print("----------------------")
+        # for q, raw in zip(questions, generations):
+        #     print("----- Raw Output -----")
+        #     print("Question:", q)
+        #     print("Raw Generation:", raw)
+        #     print("parsed answer:", self.parse_answer(raw))
+        #     print("----------------------")
 
         return [self.parse_answer(g) for g in generations]
 
