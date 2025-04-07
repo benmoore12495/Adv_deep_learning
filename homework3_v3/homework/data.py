@@ -58,11 +58,11 @@ def benchmark(func: BaseLLM, dataset: Dataset, max_question: int) -> BenchmarkRe
     answers = func.answer(*questions)
 
     # Ben's added code for debugging 
-    # for question, answer, item in zip(questions, answers, dataset.data):
-        # print("Question:", question)
-        # print("Generated Answer:", answer)
-        # print("Correct Answer:", item[1])
-        # print("----------------------")
+    for question, answer, item in zip(questions, answers, dataset.data):
+        print("Question:", question)
+        print("Generated Answer:", answer)
+        print("Correct Answer:", item[1])
+        print("----------------------")
 
     return BenchmarkResult.from_answers(answers, dataset, max_question)
 
