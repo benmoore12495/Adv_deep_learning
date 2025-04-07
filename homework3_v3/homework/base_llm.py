@@ -15,14 +15,25 @@ class BaseLLM:
         self.model = AutoModelForCausalLM.from_pretrained(checkpoint).to(device)
         self.device = device
 
+    # def format_prompt(self, question: str) -> str:
+    #     return self.tokenizer.apply_chat_template(
+    #         [
+    #             {"role": "system", "content": "You are an accurate mathematical converter AI who thinks but is consise"},
+    #             {"role": "user", "content": question},
+    #         ],
+    #         tokenize=False,
+    #         add_generation_prompt=True,
+    #     )
+    # def format_prompt(self, question: str) -> str:
+
+    #     return question.strip()
+
     def format_prompt(self, question: str) -> str:
-        return self.tokenizer.apply_chat_template(
-            [
-                {"role": "system", "content": "You are an accurate mathematical converter AI who thinks but is consise"},
-                {"role": "user", "content": question},
-            ],
-            tokenize=False,
-            add_generation_prompt=True,
+        return (
+            "<|im_start|>system\n"
+            "You are a helpful unit conversion assistant.<|im_end|>\n"
+            f"<|im_start|>user\n{question.strip()}<|im_end|>\n"
+            "<|im_start|>assistant\n"
         )
 
 
@@ -162,7 +173,8 @@ class BaseLLM:
 
         outputs = self.model.generate(
             **inputs,
-            max_new_tokens=50,
+            max_new_tokens=128,
+            # max_new_tokens=50,
             do_sample=do_sample,
             temperature=temperature,
             num_return_sequences=n_return,

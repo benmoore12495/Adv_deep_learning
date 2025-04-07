@@ -52,10 +52,21 @@ def tokenize(tokenizer, question: str, answer: str):
     return full
 
 
+# def format_example(prompt: str, answer: str) -> dict[str, str]:
+#     return {
+#         "question": prompt.strip(),
+#         "answer": f'<answer>{round(float(answer), 2)}</answer>'
+#     }
+
 def format_example(prompt: str, answer: str) -> dict[str, str]:
+    chat_prompt = (
+        "<|im_start|>system\nYou are a helpful unit conversion assistant.<|im_end|>\n"
+        f"<|im_start|>user\n{prompt.strip()}<|im_end|>\n"
+        "<|im_start|>assistant\n"
+    )
     return {
-        "question": prompt.strip(),
-        "answer": f'<answer>{round(float(answer), 2)}</answer>'
+        "question": chat_prompt,
+        "answer": f"<answer>{round(float(answer), 2)}</answer>"
     }
 
 
@@ -136,7 +147,8 @@ def train_model(
     training_args = TrainingArguments(
         output_dir=output_dir,
         per_device_train_batch_size=32,
-        num_train_epochs=5,
+        # num_train_epochs=5,
+        num_train_epochs=6,
         learning_rate=2e-4,
         
         logging_dir=output_dir,
@@ -178,7 +190,7 @@ def test_model(ckpt_path: str):
     print(f"{benchmark_result.accuracy=}  {benchmark_result.answer_rate=}")
 
     print("\n--- Sample Generations ---")
-    for i in range(5):
+    for i in range(10):
         question, true_answer = testset[i]
         # raw_output = llm.generate(question)
         chat_prompt = llm.format_prompt(question)
