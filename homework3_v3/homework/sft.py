@@ -52,12 +52,6 @@ def tokenize(tokenizer, question: str, answer: str):
     return full
 
 
-# def format_example(prompt: str, answer: str) -> dict[str, str]:
-#     return {
-#         "question": prompt.strip(),
-#         "answer": f'<answer>{round(float(answer), 2)}</answer>'
-#     }
-
 def format_example(prompt: str, answer: str) -> dict[str, str]:
     chat_prompt = (
         "<|im_start|>system\nYou are a helpful unit conversion assistant.<|im_end|>\n"
@@ -148,9 +142,10 @@ def train_model(
         output_dir=output_dir,
         per_device_train_batch_size=32,
         # num_train_epochs=5,
-        num_train_epochs=6,
+        # num_train_epochs=10, ## 46% accuracy 
+        # num_train_epochs=15, ## 56% accuracy 
+        num_train_epochs=20, ## 62% accuracy 
         learning_rate=2e-4,
-        
         logging_dir=output_dir,
         report_to="tensorboard",
         save_strategy="epoch",
