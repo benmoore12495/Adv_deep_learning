@@ -16,15 +16,6 @@ class BaseLLM:
         self.device = device
 
     # def format_prompt(self, question: str) -> str:
-    #     return self.tokenizer.apply_chat_template(
-    #         [
-    #             {"role": "system", "content": "You are an accurate mathematical converter AI who thinks but is consise"},
-    #             {"role": "user", "content": question},
-    #         ],
-    #         tokenize=False,
-    #         add_generation_prompt=True,
-    #     )
-    # def format_prompt(self, question: str) -> str:
 
     #     return question.strip()
 
