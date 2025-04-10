@@ -144,7 +144,8 @@ def train_model(
         # num_train_epochs=5,
         # num_train_epochs=10, ## 46% accuracy 
         # num_train_epochs=15, ## 56% accuracy 
-        num_train_epochs=20, ## 62% accuracy 
+        # num_train_epochs=20, ## 62% accuracy 
+        num_train_epochs=25, ## 62% accuracy 
         learning_rate=2e-4,
         logging_dir=output_dir,
         report_to="tensorboard",
