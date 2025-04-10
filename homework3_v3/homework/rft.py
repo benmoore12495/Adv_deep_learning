@@ -11,22 +11,29 @@ training_dataset = "rft"
 
 def tokenize(tokenizer, question: str, reasoning: str):
     """
-    Tokenizes the full reasoning (including <answer> tag) and supervises all non-padding tokens.
+    Tokenizes the input where only the reasoning (including <answer>) is supervised,
+    while the question is attended to but not trained on.
     """
     tokenizer.padding_side = "right"
     tokenizer.pad_token = tokenizer.eos_token
 
+    # Create full input and separately tokenize the question to get its length
     full_text = f"{question.strip()} {reasoning.strip()}{tokenizer.eos_token}"
-    full = tokenizer(full_text, padding="max_length", truncation=True, max_length=128)
+    full = tokenizer(full_text, padding="max_length", truncation=True, max_length=256)
+
+    # Get how many tokens the question takes (to know where reasoning starts)
+    q_ids = tokenizer(question.strip(), add_special_tokens=False)["input_ids"]
+    prefix_len = len(q_ids)
 
     input_ids = full["input_ids"]
     attention_mask = full["attention_mask"]
 
-    # Supervise everything except padding
-    labels = [
-        token_id if attn else -100
-        for token_id, attn in zip(input_ids, attention_mask)
-    ]
+    labels = []
+    for i, (token_id, attn) in enumerate(zip(input_ids, attention_mask)):
+        if attn == 0 or i < prefix_len:
+            labels.append(-100)  # Do not supervise padding or question
+        else:
+            labels.append(token_id)  # Supervise reasoning + answer
     full["labels"] = labels
     return full
 
@@ -87,7 +94,7 @@ def train_model(output_dir: str = "homework/rft_model", **kwargs):
         output_dir=output_dir,
         per_device_train_batch_size=32,
         num_train_epochs=20,
-        learning_rate=2e-4,
+        learning_rate=1e-4,
         gradient_checkpointing=True,
         fp16=torch.cuda.is_available(),
         save_strategy="epoch",
