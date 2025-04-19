@@ -111,7 +111,7 @@ def train(
     data_dir: Path | None = None,
     train_dataset_name: str = "train",
     # output_dir: str = "vlm_sft",
-    output_dir: str = "homework/vlm_model",  # ← updated this line
+    output_dir: str = "homework/vlm_model", # Bens update to save the model in the correct place
     num_train_epochs: int = 0.05,  # use only 0.05 epoch for training
     per_device_train_batch_size: int = 8,
     gradient_accumulation_steps: int = 4,
