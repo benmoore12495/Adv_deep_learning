@@ -1,12 +1,12 @@
 import json
 from pathlib import Path
+import time
 
 import fire
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image, ImageDraw
 
-# Define object type mapping
 OBJECT_TYPES = {
     1: "Kart",
     2: "Track Boundary",
@@ -16,191 +16,122 @@ OBJECT_TYPES = {
     6: "Special Element 3",
 }
 
-# Define colors for different object types (RGB format)
 COLORS = {
-    1: (0, 255, 0),  # Green for karts
-    2: (255, 0, 0),  # Blue for track boundaries
-    3: (0, 0, 255),  # Red for track elements
-    4: (255, 255, 0),  # Cyan for special elements
-    5: (255, 0, 255),  # Magenta for special elements
-    6: (0, 255, 255),  # Yellow for special elements
+    1: (0, 255, 0),
+    2: (255, 0, 0),
+    3: (0, 0, 255),
+    4: (255, 255, 0),
+    5: (255, 0, 255),
+    6: (0, 255, 255),
 }
 
-# Original image dimensions for the bounding box coordinates
 ORIGINAL_WIDTH = 600
 ORIGINAL_HEIGHT = 400
 
 
 def extract_frame_info(image_path: str) -> tuple[int, int]:
-    """
-    Extract frame ID and view index from image filename.
-
-    Args:
-        image_path: Path to the image file
-
-    Returns:
-        Tuple of (frame_id, view_index)
-    """
     filename = Path(image_path).name
-    # Format is typically: XXXXX_YY_im.png where XXXXX is frame_id and YY is view_index
     parts = filename.split("_")
     if len(parts) >= 2:
-        frame_id = int(parts[0], 16)  # Convert hex to decimal
+        frame_id = int(parts[0], 16)
         view_index = int(parts[1])
         return frame_id, view_index
-    return 0, 0  # Default values if parsing fails
+    return 0, 0
 
 
-def draw_detections(
-    image_path: str, info_path: str, font_scale: float = 0.5, thickness: int = 1, min_box_size: int = 5
-) -> np.ndarray:
-    """
-    Draw detection bounding boxes and labels on the image.
-
-    Args:
-        image_path: Path to the image file
-        info_path: Path to the corresponding info.json file
-        font_scale: Scale of the font for labels
-        thickness: Thickness of the bounding box lines
-        min_box_size: Minimum size for bounding boxes to be drawn
-
-    Returns:
-        The annotated image as a numpy array
-    """
-    # Read the image using PIL
-    pil_image = Image.open(image_path)
-    if pil_image is None:
-        raise ValueError(f"Could not read image at {image_path}")
-
-    # Get image dimensions
-    img_width, img_height = pil_image.size
-
-    # Create a drawing context
-    draw = ImageDraw.Draw(pil_image)
-
-    # Read the info.json file
+def extract_kart_objects(info_path: str, view_index: int, img_width=150, img_height=100) -> list:
     with open(info_path) as f:
         info = json.load(f)
 
-    # Extract frame ID and view index from image filename
-    _, view_index = extract_frame_info(image_path)
+    detections = info["detections"][view_index]
+    karts = []
+    image_center = (img_width / 2, img_height / 2)
 
-    # Get the correct detection frame based on view index
-    if view_index < len(info["detections"]):
-        frame_detections = info["detections"][view_index]
-    else:
-        print(f"Warning: View index {view_index} out of range for detections")
-        return np.array(pil_image)
-
-    # Calculate scaling factors
-    scale_x = img_width / ORIGINAL_WIDTH
-    scale_y = img_height / ORIGINAL_HEIGHT
-
-    # Draw each detection
-    for detection in frame_detections:
-        class_id, track_id, x1, y1, x2, y2 = detection
-        class_id = int(class_id)
-        track_id = int(track_id)
-
-        if class_id != 1:
+    for d in detections:
+        class_id, track_id, x1, y1, x2, y2 = d
+        if int(class_id) != 1:
             continue
 
-        # Scale coordinates to fit the current image size
-        x1_scaled = int(x1 * scale_x)
-        y1_scaled = int(y1 * scale_y)
-        x2_scaled = int(x2 * scale_x)
-        y2_scaled = int(y2 * scale_y)
+        center_x = ((x1 + x2) / 2) * img_width / ORIGINAL_WIDTH
+        center_y = ((y1 + y2) / 2) * img_height / ORIGINAL_HEIGHT
 
-        # Skip if bounding box is too small
-        if (x2_scaled - x1_scaled) < min_box_size or (y2_scaled - y1_scaled) < min_box_size:
-            continue
+        karts.append({
+            "instance_id": int(track_id),
+            "kart_name": f"Kart {int(track_id)}",
+            "center": (center_x, center_y)
+        })
 
-        if x2_scaled < 0 or x1_scaled > img_width or y2_scaled < 0 or y1_scaled > img_height:
-            continue
+    if karts:
+        def dist(k): return (k["center"][0] - image_center[0]) ** 2 + (k["center"][1] - image_center[1]) ** 2
+        ego = min(karts, key=dist)
+        for k in karts:
+            k["is_center_kart"] = (k is ego)
 
-        # Get color for this object type
-        if track_id == 0:
-            color = (255, 0, 0)
-        else:
-            color = COLORS.get(class_id, (255, 255, 255))
+    return karts
 
-        # Draw bounding box using PIL
-        draw.rectangle([(x1_scaled, y1_scaled), (x2_scaled, y2_scaled)], outline=color, width=thickness)
-
-    # Convert PIL image to numpy array for matplotlib
-    return np.array(pil_image)
-
-
-def extract_kart_objects(
-    info_path: str, view_index: int, img_width: int = 150, img_height: int = 100, min_box_size: int = 5
-) -> list:
-    """
-    Extract kart objects from the info.json file, including their center points and identify the center kart.
-    Filters out karts that are out of sight (outside the image boundaries).
-
-    Args:
-        info_path: Path to the corresponding info.json file
-        view_index: Index of the view to analyze
-        img_width: Width of the image (default: 100)
-        img_height: Height of the image (default: 150)
-
-    Returns:
-        List of kart objects, each containing:
-        - instance_id: The track ID of the kart
-        - kart_name: The name of the kart
-        - center: (x, y) coordinates of the kart's center
-        - is_center_kart: Boolean indicating if this is the kart closest to image center
-    """
-
-    raise NotImplementedError("Not implemented")
 
 def extract_track_info(info_path: str) -> str:
-    """
-    Extract track information from the info.json file.
-
-    Args:
-        info_path: Path to the info.json file
-
-    Returns:
-        Track name as a string
-    """
-
-    raise NotImplementedError("Not implemented")
+    with open(info_path) as f:
+        info = json.load(f)
+    return info.get("track_name", "Unknown Track")
 
 
-def generate_qa_pairs(info_path: str, view_index: int, img_width: int = 150, img_height: int = 100) -> list:
-    """
-    Generate question-answer pairs for a given view.
+def generate_qa_pairs(info_path: str, view_index: int, img_width=150, img_height=100) -> list:
+    karts = extract_kart_objects(info_path, view_index, img_width, img_height)
+    track_name = extract_track_info(info_path)
+    qa_pairs = []
 
-    Args:
-        info_path: Path to the info.json file
-        view_index: Index of the view to analyze
-        img_width: Width of the image (default: 100)
-        img_height: Height of the image (default: 150)
+    if not karts:
+        return qa_pairs
 
-    Returns:
-        List of dictionaries, each containing a question and answer
-    """
-    # 1. Ego car question
-    # What kart is the ego car?
+    ego = next(k for k in karts if k.get("is_center_kart"))
+    # image_file = f"{Path(info_path).stem.replace('_info', '')}_{view_index:02d}_im.jpg"
+    image_file = f"{Path(info_path).parent.name}/{Path(info_path).stem.replace('_info', '')}_{view_index:02d}_im.jpg"
 
-    # 2. Total karts question
-    # How many karts are there in the scenario?
 
-    # 3. Track information questions
-    # What track is this?
+    # 1. Ego kart
+    qa_pairs.append({"image_file": image_file, "question": "What kart is the ego car?", "answer": ego["kart_name"]})
 
-    # 4. Relative position questions for each kart
-    # Is {kart_name} to the left or right of the ego car?
-    # Is {kart_name} in front of or behind the ego car?
+    # 2. Count
+    qa_pairs.append({"image_file": image_file, "question": "How many karts are there in the scenario?", "answer": str(len(karts))})
 
-    # 5. Counting questions
-    # How many karts are to the left of the ego car?
-    # How many karts are to the right of the ego car?
-    # How many karts are in front of the ego car?
-    # How many karts are behind the ego car?
+    # 3. Track
+    qa_pairs.append({"image_file": image_file, "question": "What track is this?", "answer": track_name})
 
-    raise NotImplementedError("Not implemented")
+    # 4. Relative positions
+    for k in karts:
+        if k["instance_id"] == ego["instance_id"]:
+            continue
+
+        dx = k["center"][0] - ego["center"][0]
+        dy = ego["center"][1] - k["center"][1]
+
+        qa_pairs.append({
+            "image_file": image_file,
+            "question": f"Is {k['kart_name']} to the left or right of the ego car?",
+            "answer": "right" if dx > 0 else "left"
+        })
+
+        qa_pairs.append({
+            "image_file": image_file,
+            "question": f"Is {k['kart_name']} in front of or behind the ego car?",
+            "answer": "in front of" if dy > 0 else "behind"
+        })
+
+    # 5. Counting
+    left = sum(1 for k in karts if k["center"][0] < ego["center"][0] and k != ego)
+    right = sum(1 for k in karts if k["center"][0] > ego["center"][0] and k != ego)
+    front = sum(1 for k in karts if k["center"][1] < ego["center"][1] and k != ego)
+    behind = sum(1 for k in karts if k["center"][1] > ego["center"][1] and k != ego)
+
+    for label, count in [("left", left), ("right", right), ("in front of", front), ("behind", behind)]:
+        qa_pairs.append({
+            "image_file": image_file,
+            "question": f"How many karts are {label} the ego car?",
+            "answer": str(count)
+        })
+
+    return qa_pairs
 
 
 def check_qa_pairs(info_file: str, view_index: int):
@@ -238,16 +169,49 @@ def check_qa_pairs(info_file: str, view_index: int):
         print("-" * 50)
 
 
-"""
-Usage Example: Visualize QA pairs for a specific file and view:
-   python generate_qa.py check --info_file ../data/valid/00000_info.json --view_index 0
+def generate_dataset(split: str):
+    data_dir = Path("data") / split
+    info_files = list(sorted(data_dir.glob("*_info.json")))
 
-You probably need to add additional commands to Fire below.
-"""
+    all_written = 0
+    start_time = time.time()
+
+    print(f"🔍 Found {len(info_files)} info files in data/{split}/")
+
+    for idx, info_file in enumerate(info_files, 1):
+        all_qas = []
+
+        for view_index in range(5):
+            try:
+                qas = generate_qa_pairs(str(info_file), view_index)
+                all_qas.extend(qas)
+            except Exception as e:
+                print(f"⚠️ Skipping {info_file.name} view {view_index}: {e}")
+                continue
+
+        if all_qas:
+            out_path = data_dir / f"{info_file.stem.replace('_info', '')}_qa_pairs.json"
+            with open(out_path, "w") as f:
+                json.dump(all_qas, f, indent=2)
+
+            print(f"✅ [{idx}/{len(info_files)}] Wrote {len(all_qas)} QAs to {out_path.name}")
+
+        # ETA logging
+        elapsed = time.time() - start_time
+        per_file = elapsed / idx
+        eta = per_file * (len(info_files) - idx)
+        print(f"⏱ Elapsed: {elapsed:.1f}s | ETA: {eta:.1f}s ({eta/60:.1f} min)")
+
+        all_written += len(all_qas)
+
+    print(f"\n🎉 Done. Total QA pairs written: {all_written}")
 
 
 def main():
-    fire.Fire({"check": check_qa_pairs})
+    fire.Fire({
+        "check": check_qa_pairs,
+        "generate_dataset": generate_dataset,
+    })
 
 
 if __name__ == "__main__":
